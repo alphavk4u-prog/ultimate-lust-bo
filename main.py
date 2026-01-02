@@ -3,34 +3,25 @@ import sqlite3
 import logging
 from datetime import datetime
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ApplicationBuilder
 
-# Logging setup (errors clearly dikhege)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-print("=== BOT STARTING ===")
-print("Loading libraries... Done")
+print("=== BOT STARTING IN WEBHOOK MODE ===")
 
-# Token load with debug
+# Token
 token = os.getenv("TOKEN")
 if not token:
-    print("CRITICAL ERROR: TOKEN not found in environment variables!")
-    logging.error("No TOKEN provided in Railway variables")
+    print("ERROR: No TOKEN found!")
     exit(1)
+print(f"Token loaded: {token[:10]}...{token[-5:]}")
 
-print(f"Token found: Yes (preview: {token[:10]}...{token[-5:]})")
-print("Initializing bot...")
-
-# Database setup with persistent folder on Railway
+# Database
 data_path = '/data'
 if not os.path.exists(data_path):
     os.makedirs(data_path)
-    print("/data folder created")
-
 db_path = os.path.join(data_path, 'users.db')
 conn = sqlite3.connect(db_path, check_same_thread=False)
 c = conn.cursor()
@@ -39,7 +30,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS users
 conn.commit()
 print("Database ready")
 
-# Hot content list (aur add kar sakte ho)
+# Content
 free_content = [
     "🔥 Hot tip: Imagination is the key to ultimate pleasure 😈",
     "💦 Feel the heat rising? More fantasies await in premium...",
@@ -65,7 +56,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Choose your path:",
         reply_markup=reply_markup
     )
-    print(f"User {update.effective_user.id} started the bot")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -73,7 +63,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     today = datetime.now().date().isoformat()
 
-    # User data load
     c.execute("SELECT daily_count, last_reset, is_premium FROM users WHERE user_id=?", (user_id,))
     row = c.fetchone()
 
@@ -83,7 +72,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             count = 0
             c.execute("UPDATE users SET daily_count=?, last_reset=? WHERE user_id=?", (count, today, user_id))
             conn.commit()
-            print(f"Daily reset for user {user_id}")
     else:
         is_premium = 0
         count = 0
@@ -91,7 +79,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                   (user_id, count, today, is_premium))
         conn.commit()
 
-    # Refresh count after reset
     c.execute("SELECT daily_count, is_premium FROM users WHERE user_id=?", (user_id,))
     count, is_premium = c.fetchone()
 
@@ -105,7 +92,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = f"Free #{count}/5 🔥:\n{random.choice(free_content)}\n\nWant more? Go premium! 💎"
         else:
             response = "Free limit over for today 😏\nUpgrade to premium for unlimited lust!"
-        
         await query.edit_message_text(response)
 
     elif query.data == "premium":
@@ -117,20 +103,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(response)
 
-# Bot setup
-try:
-    app = Application.builder().token(token).build()
-    print("Application built successfully")
+# Webhook setup
+app = ApplicationBuilder().token(token).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    print("Handlers added")
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot starting polling now...")
-    print("Bot started successfully! @UltimateLust_Bot is LIVE 🔥😈")
+print("Bot handlers added")
+print("Setting up webhook...")
 
-    app.run_polling(drop_pending_updates=True)
+# Railway public URL
+port = int(os.getenv("PORT", 8080))
+webhook_url = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+if webhook_url:
+    webhook_url = f"https://{webhook_url}"
+else:
+    print("No RAILWAY_PUBLIC_DOMAIN found!")
+    exit(1)
 
-except Exception as e:
-    print(f"FATAL ERROR during bot startup: {e}")
-    logging.error("Bot crashed", exc_info=True)
+print(f"Webhook URL: {webhook_url}")
+
+# Run webhook
+app.run_webhook(
+    listen="0.0.0.0",
+    port=port,
+    url_path=token,
+    webhook_url=f"{webhook_url}/{token}"
+)
+
+print("Webhook server running! Bot is LIVE 🔥😈")
