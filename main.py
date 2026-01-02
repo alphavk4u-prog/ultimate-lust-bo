@@ -1,20 +1,45 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import os
 import sqlite3
+import logging
 from datetime import datetime
 import random
-import os
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Database (Railway पर persistent storage के लिए /data folder use करेंगे)
-if not os.path.exists('/data'):
-    os.makedirs('/data')
-conn = sqlite3.connect('/data/users.db', check_same_thread=False)
+# Logging setup (errors clearly dikhege)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+print("=== BOT STARTING ===")
+print("Loading libraries... Done")
+
+# Token load with debug
+token = os.getenv("TOKEN")
+if not token:
+    print("CRITICAL ERROR: TOKEN not found in environment variables!")
+    logging.error("No TOKEN provided in Railway variables")
+    exit(1)
+
+print(f"Token found: Yes (preview: {token[:10]}...{token[-5:]})")
+print("Initializing bot...")
+
+# Database setup with persistent folder on Railway
+data_path = '/data'
+if not os.path.exists(data_path):
+    os.makedirs(data_path)
+    print("/data folder created")
+
+db_path = os.path.join(data_path, 'users.db')
+conn = sqlite3.connect(db_path, check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users
              (user_id INTEGER PRIMARY KEY, daily_count INTEGER, last_reset TEXT, is_premium INTEGER DEFAULT 0)''')
 conn.commit()
+print("Database ready")
 
-# Content list – और जितने चाहो add कर लो
+# Hot content list (aur add kar sakte ho)
 free_content = [
     "🔥 Hot tip: Imagination is the key to ultimate pleasure 😈",
     "💦 Feel the heat rising? More fantasies await in premium...",
@@ -22,7 +47,8 @@ free_content = [
     "🌙 Midnight desires? Let me whisper secrets in your ear...",
     "💋 Lips locked in passion – want the full story?",
     "🖤 Your body is my favorite playground...",
-    "😈 Tell me your darkest fantasy... premium unlocks everything 💦"
+    "😈 Tell me your darkest fantasy... premium unlocks everything 💦",
+    "🔥 Ready to lose control? Only premium can handle that heat..."
 ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,9 +58,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "Welcome to @UltimateLustBot 🔥😈\n\nThe ultimate lust experience!\nFree: 5 hot messages/day\nPremium: Unlimited + exclusive fantasies 💦\n\nChoose:",
+        "Welcome to @UltimateLust_Bot 🔥😈\n\n"
+        "The ultimate lust experience!\n"
+        "Free: 5 hot messages/day\n"
+        "Premium: Unlimited + exclusive fantasies 💦\n\n"
+        "Choose your path:",
         reply_markup=reply_markup
     )
+    print(f"User {update.effective_user.id} started the bot")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -42,6 +73,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     today = datetime.now().date().isoformat()
 
+    # User data load
     c.execute("SELECT daily_count, last_reset, is_premium FROM users WHERE user_id=?", (user_id,))
     row = c.fetchone()
 
@@ -50,36 +82,55 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if last_reset != today:
             count = 0
             c.execute("UPDATE users SET daily_count=?, last_reset=? WHERE user_id=?", (count, today, user_id))
+            conn.commit()
+            print(f"Daily reset for user {user_id}")
     else:
         is_premium = 0
         count = 0
-        c.execute("INSERT INTO users (user_id, daily_count, last_reset, is_premium) VALUES (?, ?, ?, ?)", (user_id, count, today, is_premium))
-    conn.commit()
+        c.execute("INSERT INTO users (user_id, daily_count, last_reset, is_premium) VALUES (?, ?, ?, ?)", 
+                  (user_id, count, today, is_premium))
+        conn.commit()
 
+    # Refresh count after reset
     c.execute("SELECT daily_count, is_premium FROM users WHERE user_id=?", (user_id,))
     count, is_premium = c.fetchone()
 
     if query.data == "free":
         if is_premium == 1:
-            await query.edit_message_text("Premium unlocked! 🔥 Here's unlimited heat:\n" + random.choice(free_content))
+            response = "Premium unlocked! 🔥 Here's unlimited heat:\n" + random.choice(free_content)
         elif count < 5:
             count += 1
             c.execute("UPDATE users SET daily_count=? WHERE user_id=?", (count, user_id))
             conn.commit()
-            await query.edit_message_text(f"Free #{count}/5 🔥:\n{random.choice(free_content)}\n\nWant more? Go premium! 💎")
+            response = f"Free #{count}/5 🔥:\n{random.choice(free_content)}\n\nWant more? Go premium! 💎"
         else:
-            await query.edit_message_text("Free limit over for today 😏\nUpgrade to premium for unlimited lust!")
+            response = "Free limit over for today 😏\nUpgrade to premium for unlimited lust!"
+        
+        await query.edit_message_text(response)
 
     elif query.data == "premium":
-        await query.edit_message_text(
+        response = (
             "🔥 Ready for unlimited fantasies?\n\n"
             "Pay via UPI/Paytm/Razorpay:\n"
             "[अपना payment link यहाँ डाल दो]\n\n"
             "Payment के बाद screenshot भेजो @yourusername को unlock के लिए!"
         )
+        await query.edit_message_text(response)
 
-app = Application.builder().token("YOUR_TOKEN_HERE").build()  # अपना BOT_TOKEN डालो
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(button_handler))
-print("Bot started successfully!")
-app.run_polling()
+# Bot setup
+try:
+    app = Application.builder().token(token).build()
+    print("Application built successfully")
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    print("Handlers added")
+
+    print("Bot starting polling now...")
+    print("Bot started successfully! @UltimateLust_Bot is LIVE 🔥😈")
+
+    app.run_polling(drop_pending_updates=True)
+
+except Exception as e:
+    print(f"FATAL ERROR during bot startup: {e}")
+    logging.error("Bot crashed", exc_info=True)
