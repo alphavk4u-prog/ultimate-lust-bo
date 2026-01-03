@@ -6,35 +6,40 @@ import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 print("=== BOT STARTING ===")
 print("Loading libraries... Done")
 
+# Token
 token = os.getenv("TOKEN")
 if not token:
     print("ERROR: No TOKEN found!")
     exit(1)
 print(f"Token loaded: {token[:10]}...{token[-5:]}")
 
-# Database path change – Render में /tmp folder use करो (write permission है)
-db_path = '/tmp/users.db'  # /data की जगह /tmp use करो
+# Database
+db_path = 'users.db'
 conn = sqlite3.connect(db_path, check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users
              (user_id INTEGER PRIMARY KEY, daily_count INTEGER, last_reset TEXT, is_premium INTEGER DEFAULT 0)''')
 conn.commit()
-print("Database ready at /tmp/users.db")
+print("Database ready")
 
+# Spicy Content
 free_content = [
-    "🔥 Hot tip: Imagination is the key to ultimate pleasure 😈",
-    "💦 Feel the heat rising? More fantasies await in premium...",
-    "😏 You're teasing me already? Good boy/girl, let's play 🔥",
+    "🔥 Feeling the heat already? Imagine my hands on you... 😈",
+    "💦 You're making me wet just thinking about you... more in premium",
+    "😏 Good boy/girl... kneel and beg for the next one 🔥",
+    "🖤 Your body is my playground... premium unlocks the full game",
+    "💋 Bite your lip and think of me... want my commands?",
+    "😈 Tell me your darkest desire... I'll make it real in premium",
+    "🔥 Teasing you is my favorite... ready to cum for more?",
+    "💦 Dripping yet? Premium floods you with everything",
     "🌙 Midnight desires? Let me whisper secrets in your ear...",
-    "💋 Lips locked in passion – want the full story?",
-    "🖤 Your body is my favorite playground...",
-    "😈 Tell me your darkest fantasy... premium unlocks everything 💦",
-    "🔥 Ready to lose control? Only premium can handle that heat..."
+    "💋 Lips locked in passion – want the full story?"
 ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,7 +84,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "free":
         if is_premium == 1:
-            response = "Premium unlocked! 🔥 Here's unlimited heat:\n" + random.choice(free_content)
+            response = "Premium unlocked! 🔥 Unlimited heat:\n" + random.choice(free_content)
         elif count < 5:
             count += 1
             c.execute("UPDATE users SET daily_count=? WHERE user_id=?", (count, user_id))
@@ -91,20 +96,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "premium":
         response = (
-            "🔥 Ready for unlimited fantasies?\n\n"
-            "Pay via UPI/Paytm/Razorpay:\n"
-            "[अपना payment link यहाँ डाल दो]\n\n"
-            "Payment के बाद screenshot भेजो @yourusername को unlock के लिए!"
+            "🔥 Unlimited fantasies, custom roleplay, exclusive content!\n\n"
+            "💎 Premium Plans:\n"
+            "• ₹99 → 1 Month Unlimited\n"
+            "• ₹699 → Lifetime Unlimited 🔥\n\n"
+            "📲 Pay via UPI:\n"
+            "UPI ID: akashzyt@ybl\n"
+            "Name: Vishal Kumar\n\n"
+            "Payment करने के बाद screenshot यहाँ भेजो – मैं तुरंत premium unlock कर दूँगा 😈💦"
         )
         await query.edit_message_text(response)
 
-app = Application.builder().token(token).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(button_handler))
-
-print("Bot handlers added")
-print("Bot starting polling...")
-print("Bot started successfully! @UltimateLust_Bot is LIVE 🔥😈")
-
-app.run_polling(drop_pending_updates=True)
+# Bot run
+try:
+    app = Application.builder().token(token).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    print("Bot started successfully! @UltimateLust_Bot is LIVE 🔥😈")
+    app.run_polling(drop_pending_updates=True)
+except Exception as e:
+    print(f"FATAL ERROR: {e}")
+    logging.error("Bot crashed", exc_info=True)
