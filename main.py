@@ -3,34 +3,29 @@ import sqlite3
 import logging
 from datetime import datetime
 import random
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ApplicationBuilder
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-print("=== BOT STARTING IN WEBHOOK MODE ===")
+print("=== BOT STARTING ===")
+print("Loading libraries... Done")
 
-# Token
 token = os.getenv("TOKEN")
 if not token:
     print("ERROR: No TOKEN found!")
     exit(1)
 print(f"Token loaded: {token[:10]}...{token[-5:]}")
 
-# Database
-data_path = '/data'
-if not os.path.exists(data_path):
-    os.makedirs(data_path)
-db_path = os.path.join(data_path, 'users.db')
+# Database path change – Render में /tmp folder use करो (write permission है)
+db_path = '/tmp/users.db'  # /data की जगह /tmp use करो
 conn = sqlite3.connect(db_path, check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users
              (user_id INTEGER PRIMARY KEY, daily_count INTEGER, last_reset TEXT, is_premium INTEGER DEFAULT 0)''')
 conn.commit()
-print("Database ready")
+print("Database ready at /tmp/users.db")
 
-# Content
 free_content = [
     "🔥 Hot tip: Imagination is the key to ultimate pleasure 😈",
     "💦 Feel the heat rising? More fantasies await in premium...",
@@ -103,32 +98,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(response)
 
-# Webhook setup
-app = ApplicationBuilder().token(token).build()
+app = Application.builder().token(token).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(button_handler))
 
 print("Bot handlers added")
-print("Setting up webhook...")
+print("Bot starting polling...")
+print("Bot started successfully! @UltimateLust_Bot is LIVE 🔥😈")
 
-# Railway public URL
-port = int(os.getenv("PORT", 8080))
-webhook_url = os.getenv("RAILWAY_PUBLIC_DOMAIN")
-if webhook_url:
-    webhook_url = f"https://{webhook_url}"
-else:
-    print("No RAILWAY_PUBLIC_DOMAIN found!")
-    exit(1)
-
-print(f"Webhook URL: {webhook_url}")
-
-# Run webhook
-app.run_webhook(
-    listen="0.0.0.0",
-    port=port,
-    url_path=token,
-    webhook_url=f"{webhook_url}/{token}"
-)
-
-print("Webhook server running! Bot is LIVE 🔥😈")
+app.run_polling(drop_pending_updates=True)
