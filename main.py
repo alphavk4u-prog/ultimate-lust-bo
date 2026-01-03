@@ -17,12 +17,8 @@ if not token:
     print("ERROR: No TOKEN found!")
     exit(1)
 
-# Private Channel Username (files यहाँ से आएंगे)
+# Private Channel
 CHANNEL_USERNAME = "@UltimateLustFiles"  # तुम्हारा channel
-
-# Free में भेजने वाले Message IDs (channel posts के IDs)
-# Example में कुछ dummy IDs हैं – real IDs तुम डालो (नीचे बताया कैसे लो)
-FREE_MESSAGE_IDS = [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010]  # यहाँ अपने real IDs डालो
 
 # Database
 db_path = 'users.db'
@@ -41,12 +37,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "Welcome to @UltimateLust_Bot 🔥😈\n\n"
-        "The ultimate lust experience!\n"
-        "Free: 5 clicks/day (2 random hot files)\n"
-        "Premium: Unlimited + private group access 💦\n\n"
-        "Choose your path:",
+        "Free: 5 random hot files/day from channel\n"
+        "Premium: Unlimited + private group 💦\n\n"
+        "Choose:",
         reply_markup=reply_markup
     )
+
+async def get_channel_files(context, limit=50):
+    """Channel के latest 'limit' posts से media वाले messages collect करो"""
+    messages = await context.bot.get_chat_history(chat_id=CHANNEL_USERNAME, limit=limit)
+    media_messages = []
+    for msg in messages:
+        if msg.photo or msg.video:
+            media_messages.append(msg.message_id)
+    return media_messages
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -78,62 +82,57 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "free":
         if is_premium == 1:
-            # Premium: Unlimited 2 files
-            selected_ids = random.sample(FREE_MESSAGE_IDS, min(2, len(FREE_MESSAGE_IDS)))
-            for msg_id in selected_ids:
-                await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
-            await query.edit_message_text("Premium unlocked! 🔥 Unlimited hot files just for you 😈💦")
+            # Premium: Unlimited 5 files
+            media_ids = await get_channel_files(context, limit=100)
+            if media_ids:
+                selected = random.sample(media_ids, min(5, len(media_ids)))
+                for msg_id in selected:
+                    await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
+            await query.edit_message_text("Premium unlocked! 🔥 5 hot files for you 😈💦")
             return
 
-        # Free limit logic
-        if count >= 5:
+        # Free logic
+        if count >= 1:  # सिर्फ 1 click per day free में (5 files one time)
             if last_free_time:
                 last_time = datetime.fromisoformat(last_free_time)
                 time_diff = now - last_time
-                if time_diff < timedelta(minutes=30):
-                    minutes_left = 30 - int(time_diff.total_seconds() / 60)
-                    await query.edit_message_text(f"Free limit over! ⏳ Wait {minutes_left} minutes more...\nGo premium for instant unlimited 💎")
+                if time_diff < timedelta(hours=24):
+                    hours_left = 24 - int(time_diff.total_seconds() / 3600)
+                    await query.edit_message_text(f"Free limit over for today! ⏳ Wait {hours_left} hours\nGo premium for unlimited 💎")
                     return
-                else:
-                    count = 0
-                    c.execute("UPDATE users SET daily_count=? WHERE user_id=?", (count, user_id))
-                    conn.commit()
 
-        count += 1
-        c.execute("UPDATE users SET daily_count=?, last_free_time=? WHERE user_id=?", (count, now.isoformat(), user_id))
+        # Free user को 5 random files one time
+        media_ids = await get_channel_files(context, limit=100)
+        if media_ids:
+            selected = random.sample(media_ids, min(5, len(media_ids)))
+            for msg_id in selected:
+                await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
+        else:
+            await query.edit_message_text("No files in channel yet! Add some hot content 🔥")
+
+        c.execute("UPDATE users SET daily_count=1, last_free_time=? WHERE user_id=?", (now.isoformat(), user_id))
         conn.commit()
 
-        # Send 2 random files from channel
-        selected_ids = random.sample(FREE_MESSAGE_IDS, min(2, len(FREE_MESSAGE_IDS)))
-        for msg_id in selected_ids:
-            await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
-
-        caption = f"Free #{count}/5 🔥\nEnjoy the tease... premium for full satisfaction 💦"
-        await query.edit_message_text(caption)
+        await query.edit_message_text("Free 5 hot files sent! 🔥\nCome back tomorrow or go premium for unlimited 💦")
 
     elif query.data == "premium":
         response = (
-            "🔥 Ready for unlimited everything?\n\n"
-            "💎 Premium Plans:\n"
-            "• ₹99 → 1 Month Unlimited\n"
-            "• ₹699 → Lifetime Unlimited 🔥\n\n"
-            "📲 Pay via UPI:\n"
-            "UPI ID: akashzyt@ybl\n"
-            "Name: Vishal Kumar\n\n"
-            "Payment करो → screenshot भेजो @Anjali_Sharma4u को\n"
-            "मैं confirm करके private group link + unlimited unlock कर दूँगा 😈💦"
+            "🔥 Unlimited files + private group!\n\n"
+            "💎 Plans:\n"
+            "• ₹99 → 1 Month\n"
+            "• ₹699 → Lifetime 🔥\n\n"
+            "UPI: akashzyt@ybl (Vishal Kumar)\n\n"
+            "Payment करो → screenshot @Anjali_Sharma4u को भेजो → private group link मिलेगा!"
         )
         await query.edit_message_text(response)
 
     elif query.data == "help":
         response = (
-            "❓ Help & Support\n\n"
-            "• Free: 5 clicks/day (2 hot files per click)\n"
-            "• After 5 clicks: 30 minute wait\n"
-            "• Premium: Unlimited files + private group access\n\n"
+            "❓ Help\n\n"
+            "• Free: 5 random files once per day\n"
+            "• Premium: Unlimited anytime\n\n"
             "Admin: @Anjali_Sharma4u\n"
-            "Payment/issue? Message admin directly 😊\n\n"
-            "Enjoy the lust! 🔥"
+            "Issue? Message admin!"
         )
         await query.edit_message_text(response)
 
@@ -142,8 +141,7 @@ try:
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    print("Bot started successfully! Channel files ready 🔥😈")
+    print("Bot started! Auto picking from channel 🔥")
     app.run_polling(drop_pending_updates=True)
 except Exception as e:
-    print(f"FATAL ERROR: {e}")
-    logging.error("Bot crashed", exc_info=True)
+    print(f"ERROR: {e}")
