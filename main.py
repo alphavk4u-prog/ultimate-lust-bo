@@ -6,19 +6,16 @@ import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-print("=== BOT STARTING ===")
+print("=== BOT STARTING - AUTO CHANNEL FETCH MODE ===")
 
-# Token
 token = os.getenv("TOKEN")
 if not token:
-    print("ERROR: No TOKEN found!")
+    print("ERROR: No TOKEN!")
     exit(1)
 
-# Private Channel
-CHANNEL_USERNAME = "@UltimateLustFiles"  # तुम्हारा channel
+CHANNEL_USERNAME = "@UltimateLustFiles"
 
 # Database
 db_path = 'users.db'
@@ -27,6 +24,27 @@ c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users
              (user_id INTEGER PRIMARY KEY, daily_count INTEGER, last_reset TEXT, is_premium INTEGER DEFAULT 0, last_free_time TEXT)''')
 conn.commit()
+
+async def fetch_all_media_ids(context, channel_username):
+    """Channel के all media message IDs auto fetch by pagination"""
+    media_ids = []
+    last_id = 0  # Start from latest
+    while True:
+        try:
+            messages = await context.bot.get_chat_history(chat_id=channel_username, limit=100, from_message_id=last_id)
+            if not messages:
+                break
+            for msg in messages:
+                if msg.photo or msg.video:
+                    media_ids.append(msg.message_id)
+            last_id = messages[-1].message_id - 1  # Paginate backwards
+            if len(messages) < 100:
+                break
+        except Exception as e:
+            print(f"Error fetching history: {e}")
+            break
+    print(f"Fetched {len(media_ids)} media IDs from channel")
+    return media_ids
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -37,20 +55,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "Welcome to @UltimateLust_Bot 🔥😈\n\n"
-        "Free: 5 random hot files/day from channel\n"
+        "Free: 5 clicks/day (2 random hot files from channel)\n"
         "Premium: Unlimited + private group 💦\n\n"
         "Choose:",
         reply_markup=reply_markup
     )
-
-async def get_channel_files(context, limit=50):
-    """Channel के latest 'limit' posts से media वाले messages collect करो"""
-    messages = await context.bot.get_chat_history(chat_id=CHANNEL_USERNAME, limit=limit)
-    media_messages = []
-    for msg in messages:
-        if msg.photo or msg.video:
-            media_messages.append(msg.message_id)
-    return media_messages
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -80,40 +89,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute("SELECT daily_count, is_premium, last_free_time FROM users WHERE user_id=?", (user_id,))
     count, is_premium, last_free_time = c.fetchone()
 
+    # Auto fetch media IDs from channel
+    media_ids = await fetch_all_media_ids(context, CHANNEL_USERNAME)
+    if not media_ids:
+        await query.edit_message_text("No files in channel! Add some hot content 🔥")
+        return
+
     if query.data == "free":
         if is_premium == 1:
-            # Premium: Unlimited 5 files
-            media_ids = await get_channel_files(context, limit=100)
-            if media_ids:
-                selected = random.sample(media_ids, min(5, len(media_ids)))
-                for msg_id in selected:
-                    await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
-            await query.edit_message_text("Premium unlocked! 🔥 5 hot files for you 😈💦")
+            selected = random.sample(media_ids, min(2, len(media_ids)))
+            for msg_id in selected:
+                await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
+            await query.edit_message_text("Premium unlocked! 🔥 Unlimited hot files 💦")
             return
 
-        # Free logic
-        if count >= 1:  # सिर्फ 1 click per day free में (5 files one time)
+        if count >= 5:
             if last_free_time:
                 last_time = datetime.fromisoformat(last_free_time)
                 time_diff = now - last_time
-                if time_diff < timedelta(hours=24):
-                    hours_left = 24 - int(time_diff.total_seconds() / 3600)
-                    await query.edit_message_text(f"Free limit over for today! ⏳ Wait {hours_left} hours\nGo premium for unlimited 💎")
+                if time_diff < timedelta(minutes=30):
+                    minutes_left = 30 - int(time_diff.total_seconds() / 60)
+                    await query.edit_message_text(f"Free limit over! ⏳ Wait {minutes_left} minutes\nGo premium 💎")
                     return
 
-        # Free user को 5 random files one time
-        media_ids = await get_channel_files(context, limit=100)
-        if media_ids:
-            selected = random.sample(media_ids, min(5, len(media_ids)))
-            for msg_id in selected:
-                await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
-        else:
-            await query.edit_message_text("No files in channel yet! Add some hot content 🔥")
-
-        c.execute("UPDATE users SET daily_count=1, last_free_time=? WHERE user_id=?", (now.isoformat(), user_id))
+        count += 1
+        c.execute("UPDATE users SET daily_count=?, last_free_time=? WHERE user_id=?", (count, now.isoformat(), user_id))
         conn.commit()
 
-        await query.edit_message_text("Free 5 hot files sent! 🔥\nCome back tomorrow or go premium for unlimited 💦")
+        selected = random.sample(media_ids, min(2, len(media_ids)))
+        for msg_id in selected:
+            await context.bot.forward_message(chat_id=user_id, from_chat_id=CHANNEL_USERNAME, message_id=msg_id)
+
+        caption = f"Free #{count}/5 🔥\nTeasing you... premium for full access 💦"
+        await query.edit_message_text(caption)
 
     elif query.data == "premium":
         response = (
@@ -129,19 +137,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "help":
         response = (
             "❓ Help\n\n"
-            "• Free: 5 random files once per day\n"
-            "• Premium: Unlimited anytime\n\n"
-            "Admin: @Anjali_Sharma4u\n"
-            "Issue? Message admin!"
+            "• Free: 5 clicks/day (2 files)\n"
+            "• After limit: 30 min wait\n"
+            "• Premium: Unlimited\n\n"
+            "Admin: @Anjali_Sharma4u"
         )
         await query.edit_message_text(response)
 
-# Bot run
 try:
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
-    print("Bot started! Auto picking from channel 🔥")
+    print("Bot LIVE - Auto fetching all channel files 🔥😈")
     app.run_polling(drop_pending_updates=True)
 except Exception as e:
     print(f"ERROR: {e}")
